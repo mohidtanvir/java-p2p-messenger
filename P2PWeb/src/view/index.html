@@ -1,0 +1,988 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P2P LAN Chat</title>
+<style>
+  /* ── Reset & Fonts ───────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+  :root {
+    --bg-1: #0e1117;
+    --bg-2: #161b22;
+    --bg-3: #1c2128;
+    --bg-4: #21262d;
+    --bg-5: #30363d;
+    --border: #30363d;
+    --text-1: #e6edf3;
+    --text-2: #8b949e;
+    --text-3: #6e7681;
+    --accent: #5865f2;
+    --accent-hover: #4752c4;
+    --accent-light: rgba(88,101,242,0.15);
+    --green: #3fb950;
+    --green-dim: rgba(63,185,80,0.15);
+    --red: #f85149;
+    --yellow: #d29922;
+    --mention: rgba(88,101,242,0.1);
+    --scrollbar: #30363d;
+    --radius: 8px;
+    --radius-sm: 4px;
+    --radius-lg: 12px;
+    --shadow: 0 8px 32px rgba(0,0,0,0.4);
+    --font: 'Inter', -apple-system, sans-serif;
+  }
+
+  html, body { height: 100%; overflow: hidden; }
+
+  body {
+    font-family: var(--font);
+    background: var(--bg-1);
+    color: var(--text-1);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 4px; }
+
+  /* ── Layout ──────────────────────────────────────────────────── */
+  #app {
+    display: grid;
+    grid-template-columns: 68px 240px 1fr 260px;
+    grid-template-rows: 100vh;
+    height: 100vh;
+  }
+
+  /* ── Server Rail (leftmost icons bar) ───────────────────────── */
+  #rail {
+    background: var(--bg-1);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 12px 0;
+    gap: 8px;
+    border-right: 1px solid var(--border);
+  }
+
+  .rail-icon {
+    width: 48px; height: 48px;
+    border-radius: 50%;
+    background: var(--bg-3);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    transition: border-radius .2s, background .15s;
+    position: relative;
+    font-size: 20px;
+    user-select: none;
+  }
+  .rail-icon:hover, .rail-icon.active {
+    border-radius: 14px;
+    background: var(--accent);
+  }
+  .rail-icon .tooltip {
+    position: absolute; left: 60px; top: 50%;
+    transform: translateY(-50%);
+    background: #111; color: #fff;
+    padding: 6px 10px; border-radius: 6px;
+    white-space: nowrap; font-size: 12px; font-weight: 500;
+    pointer-events: none; opacity: 0; transition: opacity .15s;
+    z-index: 99;
+  }
+  .rail-icon:hover .tooltip { opacity: 1; }
+  .rail-divider {
+    width: 32px; height: 1px;
+    background: var(--border); margin: 4px 0;
+  }
+
+  /* ── Sidebar ─────────────────────────────────────────────────── */
+  #sidebar {
+    background: var(--bg-2);
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--border);
+    overflow: hidden;
+  }
+
+  .sidebar-header {
+    padding: 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .sidebar-header h2 {
+    font-size: 15px; font-weight: 600;
+    color: var(--text-1);
+    display: flex; align-items: center; gap: 8px;
+  }
+
+  .section-label {
+    padding: 16px 16px 6px;
+    font-size: 11px; font-weight: 600;
+    color: var(--text-3);
+    text-transform: uppercase; letter-spacing: .08em;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+
+  .peer-list { overflow-y: auto; flex: 1; padding: 4px 8px; }
+
+  .peer-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px; border-radius: var(--radius);
+    cursor: pointer; transition: background .1s;
+    position: relative;
+  }
+  .peer-item:hover { background: var(--bg-4); }
+  .peer-item.active { background: var(--bg-5); }
+  .peer-item.active .peer-name { color: var(--text-1); font-weight: 600; }
+
+  .peer-avatar {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent), #7289da);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 14px; color: #fff;
+    flex-shrink: 0; position: relative;
+  }
+  .peer-avatar .status-dot {
+    position: absolute; bottom: 1px; right: 1px;
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--green);
+    border: 2px solid var(--bg-2);
+  }
+
+  .peer-info { flex: 1; min-width: 0; }
+  .peer-name { font-size: 14px; font-weight: 500; color: var(--text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .peer-sub  { font-size: 11px; color: var(--text-3); }
+
+  .unread-badge {
+    background: var(--red); color: #fff;
+    font-size: 10px; font-weight: 700;
+    padding: 2px 6px; border-radius: 10px;
+    min-width: 18px; text-align: center;
+  }
+
+  /* user card at bottom */
+  .user-card {
+    padding: 10px 12px;
+    background: var(--bg-1);
+    border-top: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .user-card .peer-avatar { width: 32px; height: 32px; font-size: 12px; }
+  .user-card .user-info { flex: 1; min-width: 0; }
+  .user-card .user-name { font-size: 13px; font-weight: 600; color: var(--text-1); }
+  .user-card .user-ip   { font-size: 11px; color: var(--text-3); }
+  .icon-btn {
+    background: none; border: none; cursor: pointer;
+    color: var(--text-2); padding: 4px; border-radius: 4px;
+    font-size: 16px; transition: color .15s;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .icon-btn:hover { color: var(--text-1); }
+
+  /* ── Chat Area ───────────────────────────────────────────────── */
+  #chat-area {
+    display: flex; flex-direction: column;
+    background: var(--bg-3);
+    overflow: hidden;
+  }
+
+  /* top bar */
+  #chat-topbar {
+    height: 52px; min-height: 52px;
+    padding: 0 16px;
+    display: flex; align-items: center; gap: 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-3);
+  }
+  #chat-topbar .hash { color: var(--text-3); font-size: 20px; }
+  #chat-topbar .chat-name { font-weight: 600; font-size: 15px; }
+  #chat-topbar .chat-status { font-size: 12px; color: var(--text-3); margin-left: 6px; }
+  .topbar-actions { margin-left: auto; display: flex; gap: 4px; }
+
+  /* messages */
+  #messages {
+    flex: 1; overflow-y: auto;
+    padding: 16px 0; display: flex; flex-direction: column;
+  }
+
+  .empty-state {
+    flex: 1; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    color: var(--text-3); gap: 12px;
+  }
+  .empty-state .icon { font-size: 48px; }
+  .empty-state p { font-size: 14px; }
+
+  /* message group */
+  .msg-group { padding: 2px 16px; }
+  .msg-group:hover { background: rgba(255,255,255,.02); }
+
+  .msg-group.first-in-group { margin-top: 16px; }
+
+  .msg-header {
+    display: flex; align-items: baseline; gap: 8px;
+    margin-bottom: 2px;
+  }
+  .msg-author { font-weight: 600; font-size: 14px; cursor: pointer; }
+  .msg-author:hover { text-decoration: underline; }
+  .msg-author.me    { color: var(--accent); }
+  .msg-author.other { color: var(--green); }
+  .msg-time { font-size: 11px; color: var(--text-3); }
+
+  .msg-content {
+    font-size: 14px; color: var(--text-1);
+    line-height: 1.6; word-break: break-word;
+    padding-left: 0;
+  }
+  .msg-content.continued { padding-left: 0; margin-left: 0; }
+
+  .msg-bubble {
+    display: inline-block;
+    max-width: 100%;
+  }
+
+  /* file message */
+  .file-msg {
+    display: inline-flex; align-items: center; gap: 10px;
+    background: var(--bg-4); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 10px 14px;
+    margin-top: 4px; cursor: pointer; transition: background .15s;
+    text-decoration: none; color: inherit; max-width: 320px;
+  }
+  .file-msg:hover { background: var(--bg-5); }
+  .file-icon { font-size: 28px; }
+  .file-info .file-name { font-weight: 500; font-size: 13px; color: var(--text-1); }
+  .file-info .file-size { font-size: 11px; color: var(--text-3); }
+
+  /* date separator */
+  .date-sep {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 16px; color: var(--text-3); font-size: 12px;
+  }
+  .date-sep::before, .date-sep::after {
+    content: ''; flex: 1; height: 1px; background: var(--border);
+  }
+
+  /* typing / new-message indicator */
+  #typing-area { padding: 4px 16px; min-height: 20px; }
+  .typing-text { font-size: 12px; color: var(--text-3); font-style: italic; }
+
+  /* ── Input Bar ───────────────────────────────────────────────── */
+  #input-bar {
+    padding: 0 16px 16px;
+  }
+  .input-wrap {
+    background: var(--bg-5);
+    border-radius: var(--radius-lg);
+    display: flex; align-items: flex-end; gap: 0;
+    border: 1px solid transparent;
+    transition: border-color .2s;
+  }
+  .input-wrap:focus-within { border-color: var(--accent); }
+
+  .input-action-btn {
+    background: none; border: none; cursor: pointer;
+    color: var(--text-2); padding: 12px;
+    font-size: 18px; transition: color .15s;
+    display: flex; align-items: center;
+  }
+  .input-action-btn:hover { color: var(--text-1); }
+
+  #msg-input {
+    flex: 1; background: none; border: none; outline: none;
+    color: var(--text-1); font-family: var(--font);
+    font-size: 14px; padding: 12px 4px;
+    resize: none; min-height: 44px; max-height: 200px;
+    line-height: 1.5;
+  }
+  #msg-input::placeholder { color: var(--text-3); }
+
+  #send-btn {
+    background: var(--accent); border: none; cursor: pointer;
+    color: #fff; margin: 8px; padding: 6px 12px;
+    border-radius: var(--radius); font-size: 18px;
+    display: flex; align-items: center; justify-content: center;
+    transition: background .15s, transform .1s;
+  }
+  #send-btn:hover { background: var(--accent-hover); }
+  #send-btn:active { transform: scale(.95); }
+
+  /* ── Right Panel: Files ──────────────────────────────────────── */
+  #right-panel {
+    background: var(--bg-2);
+    border-left: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+
+  .panel-header {
+    padding: 16px;
+    border-bottom: 1px solid var(--border);
+    font-weight: 600; font-size: 14px;
+    display: flex; align-items: center; gap: 8px;
+  }
+
+  .file-list { overflow-y: auto; flex: 1; padding: 8px; }
+
+  .file-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px; border-radius: var(--radius);
+    cursor: pointer; transition: background .1s;
+    border: 1px solid transparent;
+  }
+  .file-item:hover { background: var(--bg-4); border-color: var(--border); }
+
+  .file-item-icon { font-size: 22px; flex-shrink: 0; }
+  .file-item-info { flex: 1; min-width: 0; }
+  .file-item-name { font-size: 12px; font-weight: 500; color: var(--text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .file-item-meta { font-size: 11px; color: var(--text-3); }
+  .file-direction {
+    font-size: 10px; font-weight: 600; padding: 2px 6px;
+    border-radius: 4px; flex-shrink: 0;
+  }
+  .file-direction.sent { background: var(--accent-light); color: var(--accent); }
+  .file-direction.recv { background: var(--green-dim); color: var(--green); }
+
+  /* ── Toast notifications ─────────────────────────────────────── */
+  #toasts {
+    position: fixed; bottom: 20px; right: 20px;
+    display: flex; flex-direction: column-reverse; gap: 8px;
+    z-index: 999;
+  }
+  .toast {
+    background: var(--bg-4); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 12px 16px;
+    box-shadow: var(--shadow); min-width: 280px; max-width: 360px;
+    display: flex; align-items: flex-start; gap: 10px;
+    animation: slideIn .3s ease;
+  }
+  .toast.success { border-left: 3px solid var(--green); }
+  .toast.error   { border-left: 3px solid var(--red); }
+  .toast.info    { border-left: 3px solid var(--accent); }
+  .toast-icon { font-size: 18px; flex-shrink: 0; }
+  .toast-text .toast-title { font-weight: 600; font-size: 13px; }
+  .toast-text .toast-body  { font-size: 12px; color: var(--text-2); margin-top: 2px; }
+
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateX(20px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+
+  /* ── File viewer modal ───────────────────────────────────────── */
+  #modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.7);
+    display: none; align-items: center; justify-content: center;
+    z-index: 100; backdrop-filter: blur(4px);
+  }
+  #modal-overlay.open { display: flex; }
+  #modal {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    width: min(700px, 90vw); max-height: 80vh;
+    display: flex; flex-direction: column;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .modal-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .modal-header h3 { font-size: 15px; font-weight: 600; }
+  .modal-close {
+    background: none; border: none; cursor: pointer;
+    color: var(--text-2); font-size: 20px; padding: 4px;
+    border-radius: 4px; transition: color .15s;
+  }
+  .modal-close:hover { color: var(--text-1); }
+  .modal-body {
+    flex: 1; overflow-y: auto; padding: 20px;
+  }
+  #file-content {
+    font-family: 'Courier New', monospace;
+    font-size: 13px; color: var(--text-1);
+    line-height: 1.8; white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  /* ── Upload overlay ──────────────────────────────────────────── */
+  #file-input { display: none; }
+
+  /* ── Connection status ───────────────────────────────────────── */
+  #ws-status {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--red); flex-shrink: 0;
+    transition: background .3s;
+  }
+  #ws-status.connected { background: var(--green); }
+
+  /* ── Refresh spinner ─────────────────────────────────────────── */
+  .spin { animation: spin .6s linear infinite; display: inline-block; }
+  @keyframes spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+
+  /* ── Scrolled-to-bottom indicator ───────────────────────────── */
+  #scroll-btn {
+    position: absolute; bottom: 80px; right: 280px;
+    background: var(--accent); color: #fff;
+    border: none; cursor: pointer;
+    width: 36px; height: 36px; border-radius: 50%;
+    display: none; align-items: center; justify-content: center;
+    font-size: 18px; box-shadow: var(--shadow);
+    transition: opacity .2s;
+  }
+  #scroll-btn.visible { display: flex; }
+
+  /* No-peer selected placeholder */
+  .no-chat {
+    flex: 1; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    color: var(--text-3); gap: 16px; text-align: center;
+    padding: 40px;
+  }
+  .no-chat .big-icon { font-size: 72px; }
+  .no-chat h2 { font-size: 22px; font-weight: 700; color: var(--text-2); }
+  .no-chat p  { font-size: 14px; max-width: 280px; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ── Rail ───────────────────────────────────────────────── -->
+  <nav id="rail">
+    <div class="rail-icon active" title="Chat">
+      💬<span class="tooltip">P2P Chat</span>
+    </div>
+    <div class="rail-divider"></div>
+    <div class="rail-icon" onclick="refreshAll()" id="refresh-icon">
+      🔄<span class="tooltip">Refresh Peers</span>
+    </div>
+    <div class="rail-icon" onclick="showFilesPanel()">
+      📁<span class="tooltip">File History</span>
+    </div>
+  </nav>
+
+  <!-- ── Sidebar ─────────────────────────────────────────────── -->
+  <aside id="sidebar">
+    <div class="sidebar-header">
+      <h2>
+        <div id="ws-status"></div>
+        P2P LAN Chat
+      </h2>
+    </div>
+
+    <div class="section-label">
+      Online Peers
+      <button class="icon-btn" onclick="refreshAll()" title="Refresh">⟳</button>
+    </div>
+    <div class="peer-list" id="peer-list">
+      <div style="text-align:center;padding:20px;color:var(--text-3);font-size:13px">
+        Loading peers...
+      </div>
+    </div>
+
+    <!-- Local user card -->
+    <div class="user-card" id="user-card">
+      <div class="peer-avatar" id="my-avatar">?</div>
+      <div class="user-info">
+        <div class="user-name" id="my-name">Loading...</div>
+        <div class="user-ip" id="my-ip">...</div>
+      </div>
+      <button class="icon-btn" title="Settings" onclick="showToast('Settings coming soon!','info')">⚙️</button>
+    </div>
+  </aside>
+
+  <!-- ── Chat ────────────────────────────────────────────────── -->
+  <main id="chat-area">
+    <div id="chat-topbar">
+      <span class="hash">#</span>
+      <span class="chat-name" id="chat-name">Select a peer</span>
+      <span class="chat-status" id="chat-status"></span>
+      <div class="topbar-actions">
+        <button class="icon-btn" onclick="refreshPeers()" title="Refresh peers">🔄</button>
+        <button class="icon-btn" onclick="document.getElementById('file-input').click()" title="Send file">📎</button>
+      </div>
+    </div>
+
+    <div id="messages">
+      <div class="no-chat">
+        <div class="big-icon">💬</div>
+        <h2>Welcome to P2P LAN Chat</h2>
+        <p>Select someone from the left panel to start chatting on your LAN</p>
+      </div>
+    </div>
+
+    <div id="typing-area"></div>
+
+    <div id="input-bar">
+      <div class="input-wrap">
+        <button class="input-action-btn" onclick="document.getElementById('file-input').click()" title="Attach file">➕</button>
+        <textarea id="msg-input" rows="1" placeholder="Message..."></textarea>
+        <button id="send-btn" onclick="sendMessage()" title="Send">➤</button>
+      </div>
+    </div>
+
+    <button id="scroll-btn" onclick="scrollToBottom(true)">↓</button>
+  </main>
+
+  <!-- ── Right Panel ─────────────────────────────────────────── -->
+  <aside id="right-panel">
+    <div class="panel-header">📁 File History</div>
+    <div class="file-list" id="file-list">
+      <div style="text-align:center;padding:20px;color:var(--text-3);font-size:13px">No files yet</div>
+    </div>
+  </aside>
+
+</div><!-- end #app -->
+
+<!-- ── Toasts ──────────────────────────────────────────────── -->
+<div id="toasts"></div>
+
+<!-- ── File input ──────────────────────────────────────────── -->
+<input type="file" id="file-input" accept=".txt" onchange="handleFileSelect(this)">
+
+<!-- ── Modal ───────────────────────────────────────────────── -->
+<div id="modal-overlay" onclick="e => { if(e.target===this) closeModal(); }">
+  <div id="modal">
+    <div class="modal-header">
+      <h3 id="modal-title">File Content</h3>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <pre id="file-content"></pre>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────
+const API  = 'http://localhost:8082';
+const WS   = 'ws://localhost:8081';
+
+let me          = null;   // local peer object
+let peers       = [];     // online peers
+let selectedMac = null;   // currently open chat
+let ws          = null;   // WebSocket connection
+let unread      = {};     // { mac: count }
+let allMessages = {};     // { mac: [...messages] }
+let atBottom    = true;   // whether chat is scrolled to bottom
+
+// ── Init ───────────────────────────────────────────────────────────
+async function init() {
+  await loadMe();
+  await refreshAll();
+  connectWebSocket();
+  setupInput();
+  setupScrollDetection();
+  // Auto-refresh peers every 30 seconds
+  setInterval(refreshPeers, 30000);
+}
+
+// ── Load local user ────────────────────────────────────────────────
+async function loadMe() {
+  try {
+    const res = await fetch(`${API}/api/me`);
+    me = await res.json();
+    document.getElementById('my-name').textContent   = me.username;
+    document.getElementById('my-ip').textContent     = me.ip + ':' + me.port;
+    document.getElementById('my-avatar').textContent = me.username.charAt(0).toUpperCase();
+    document.title = 'P2P LAN Chat — ' + me.username;
+  } catch(e) {
+    showToast('Cannot connect to Java backend. Is it running?', 'error');
+  }
+}
+
+// ── Load online peers ──────────────────────────────────────────────
+async function refreshPeers() {
+  try {
+    const res = await fetch(`${API}/api/peers`);
+    peers = await res.json();
+    renderPeerList();
+  } catch(e) {
+    console.error('peers error', e);
+  }
+}
+
+async function refreshAll() {
+  const icon = document.getElementById('refresh-icon');
+  icon.innerHTML = '<span class="spin">🔄</span><span class="tooltip">Refresh Peers</span>';
+  await refreshPeers();
+  await loadFileHistory();
+  icon.innerHTML = '🔄<span class="tooltip">Refresh Peers</span>';
+}
+
+// ── Render peer list ───────────────────────────────────────────────
+function renderPeerList() {
+  const el = document.getElementById('peer-list');
+  if (peers.length === 0) {
+    el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-3);font-size:13px">No peers online.<br>Make sure others are running the app on the same WiFi.</div>';
+    return;
+  }
+
+  el.innerHTML = peers.map(p => {
+    const initial = p.username.charAt(0).toUpperCase();
+    const active  = selectedMac === p.mac ? 'active' : '';
+    const badge   = unread[p.mac] ? `<div class="unread-badge">${unread[p.mac]}</div>` : '';
+    // Random but stable color per user
+    const hue     = hashCode(p.mac) % 360;
+    return `
+      <div class="peer-item ${active}" onclick="selectPeer('${p.mac}')" id="peer-${p.mac.replace(/:/g,'_')}">
+        <div class="peer-avatar" style="background:hsl(${hue},60%,45%)">
+          ${initial}
+          <div class="status-dot"></div>
+        </div>
+        <div class="peer-info">
+          <div class="peer-name">${escHtml(p.username)}</div>
+          <div class="peer-sub">${escHtml(p.ip)}</div>
+        </div>
+        ${badge}
+      </div>`;
+  }).join('');
+}
+
+// ── Select peer & load chat ────────────────────────────────────────
+async function selectPeer(mac) {
+  selectedMac  = mac;
+  unread[mac]  = 0;
+
+  const peer = peers.find(p => p.mac === mac);
+  if (!peer) return;
+
+  // Update topbar
+  document.getElementById('chat-name').textContent   = peer.username;
+  document.getElementById('chat-status').textContent = '• ' + peer.ip;
+
+  // Highlight in sidebar
+  document.querySelectorAll('.peer-item').forEach(el => el.classList.remove('active'));
+  const pEl = document.getElementById('peer-' + mac.replace(/:/g,'_'));
+  if (pEl) pEl.classList.add('active');
+
+  // Load history
+  try {
+    const res  = await fetch(`${API}/api/history?mac=${encodeURIComponent(mac)}`);
+    const msgs = await res.json();
+    allMessages[mac] = msgs;
+    renderMessages(mac);
+  } catch(e) {
+    showToast('Could not load chat history', 'error');
+  }
+}
+
+// ── Render messages ────────────────────────────────────────────────
+function renderMessages(mac) {
+  const msgs = allMessages[mac] || [];
+  const el   = document.getElementById('messages');
+
+  if (msgs.length === 0) {
+    el.innerHTML = `
+      <div class="empty-state">
+        <div class="icon">👋</div>
+        <p>No messages yet. Say hello!</p>
+      </div>`;
+    return;
+  }
+
+  let html = '';
+  let lastAuthor = null;
+  let lastTime   = null;
+
+  msgs.forEach((m, i) => {
+    const isMe     = m.mine;
+    const sameAuth = lastAuthor === m.sender;
+    const cls      = isMe ? 'me' : 'other';
+
+    if (!sameAuth) {
+      html += `<div class="msg-group first-in-group">`;
+      html += `<div class="msg-header">
+        <span class="msg-author ${cls}">${escHtml(m.sender)}</span>
+        <span class="msg-time">${escHtml(m.time)}</span>
+      </div>`;
+    } else {
+      html += `<div class="msg-group">`;
+    }
+
+    if (m.content && m.content.startsWith('[File sent]')) {
+      const parts    = m.content.replace('[File sent] ','').split(' (');
+      const fname    = parts[0];
+      const fsize    = parts[1] ? parts[1].replace(')','') : '';
+      html += `<div class="msg-content">
+        <a class="file-msg" href="${API}/file/${encodeURIComponent(fname)}" target="_blank">
+          <span class="file-icon">📄</span>
+          <div class="file-info">
+            <div class="file-name">${escHtml(fname)}</div>
+            <div class="file-size">${escHtml(fsize)}</div>
+          </div>
+        </a>
+      </div>`;
+    } else {
+      html += `<div class="msg-content">${escHtml(m.content)}</div>`;
+    }
+
+    html += '</div>';
+    lastAuthor = m.sender;
+  });
+
+  el.innerHTML = html;
+  scrollToBottom();
+}
+
+// ── Send message ───────────────────────────────────────────────────
+async function sendMessage() {
+  if (!selectedMac) { showToast('Select a peer first!', 'error'); return; }
+  const input   = document.getElementById('msg-input');
+  const content = input.value.trim();
+  if (!content) return;
+
+  input.value = '';
+  autoResize(input);
+
+  try {
+    const body = `mac=${encodeURIComponent(selectedMac)}&content=${encodeURIComponent(content)}`;
+    const res  = await fetch(`${API}/api/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body
+    });
+    const data = await res.json();
+    if (data.result === 'OK') {
+      // Add to local messages
+      if (!allMessages[selectedMac]) allMessages[selectedMac] = [];
+      allMessages[selectedMac].push({
+        sender: 'You', content, time: now(), mine: true
+      });
+      renderMessages(selectedMac);
+    } else {
+      showToast(data.result, 'error');
+    }
+  } catch(e) {
+    showToast('Send failed: ' + e.message, 'error');
+  }
+}
+
+// ── Handle file select ─────────────────────────────────────────────
+async function handleFileSelect(input) {
+  if (!selectedMac) { showToast('Select a peer first!', 'error'); return; }
+  const file = input.files[0];
+  if (!file) return;
+  if (!file.name.endsWith('.txt')) { showToast('Only .txt files allowed', 'error'); return; }
+  if (file.size > 10 * 1024 * 1024) { showToast('File too large (max 10 MB)', 'error'); return; }
+
+  showToast('Sending ' + file.name + '...', 'info');
+
+  const form = new FormData();
+  form.append('file', file);
+
+  try {
+    const res  = await fetch(`${API}/api/sendfile?mac=${encodeURIComponent(selectedMac)}`, {
+      method: 'POST', body: form
+    });
+    const data = await res.json();
+    if (data.result === 'OK') {
+      showToast('File sent: ' + file.name, 'success');
+      if (!allMessages[selectedMac]) allMessages[selectedMac] = [];
+      allMessages[selectedMac].push({
+        sender: 'You',
+        content: `[File sent] ${file.name} (${formatSize(file.size)})`,
+        time: now(), mine: true
+      });
+      renderMessages(selectedMac);
+      loadFileHistory();
+    } else {
+      showToast(data.result, 'error');
+    }
+  } catch(e) {
+    showToast('Upload failed: ' + e.message, 'error');
+  }
+  input.value = '';
+}
+
+// ── File history ───────────────────────────────────────────────────
+async function loadFileHistory() {
+  try {
+    const res     = await fetch(`${API}/api/files`);
+    const records = await res.json();
+    renderFileHistory(records);
+  } catch(e) {}
+}
+
+function renderFileHistory(records) {
+  const el = document.getElementById('file-list');
+  if (!records || records.length === 0) {
+    el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-3);font-size:13px">No files yet</div>';
+    return;
+  }
+  el.innerHTML = records.map(fr => `
+    <div class="file-item" onclick="viewFile('${escHtml(fr.filename)}')">
+      <div class="file-item-icon">📄</div>
+      <div class="file-item-info">
+        <div class="file-item-name">${escHtml(fr.filename)}</div>
+        <div class="file-item-meta">${escHtml(fr.time)} · ${formatSize(fr.filesize)}</div>
+      </div>
+      <div class="file-direction ${fr.sent ? 'sent' : 'recv'}">${fr.sent ? '↑' : '↓'}</div>
+    </div>`).join('');
+}
+
+async function viewFile(filename) {
+  try {
+    const res  = await fetch(`${API}/api/readfile?name=${encodeURIComponent(filename)}`);
+    const data = await res.json();
+    document.getElementById('modal-title').textContent = filename;
+    document.getElementById('file-content').textContent = data.content;
+    document.getElementById('modal-overlay').classList.add('open');
+  } catch(e) {
+    showToast('Could not read file', 'error');
+  }
+}
+
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('open');
+}
+document.getElementById('modal-overlay').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+
+// ── WebSocket ──────────────────────────────────────────────────────
+function connectWebSocket() {
+  const statusEl = document.getElementById('ws-status');
+  try {
+    ws = new WebSocket(WS);
+
+    ws.onopen = () => {
+      statusEl.classList.add('connected');
+      console.log('[WS] Connected');
+    };
+
+    ws.onmessage = (e) => {
+      try {
+        const event = JSON.parse(e.data);
+        handleWsEvent(event);
+      } catch(err) { console.error('WS parse error', err); }
+    };
+
+    ws.onclose = () => {
+      statusEl.classList.remove('connected');
+      setTimeout(connectWebSocket, 3000); // Reconnect
+    };
+
+    ws.onerror = () => { ws.close(); };
+  } catch(e) {
+    setTimeout(connectWebSocket, 3000);
+  }
+}
+
+function handleWsEvent(event) {
+  if (event.type === 'message') {
+    const { senderMac, senderName, content, time } = event;
+
+    if (!allMessages[senderMac]) allMessages[senderMac] = [];
+    allMessages[senderMac].push({ sender: senderName, content, time, mine: false });
+
+    if (selectedMac === senderMac) {
+      renderMessages(senderMac);
+    } else {
+      unread[senderMac] = (unread[senderMac] || 0) + 1;
+      renderPeerList();
+      showToast(`${senderName}: ${content}`, 'info', senderMac);
+    }
+  }
+  else if (event.type === 'file') {
+    const { senderMac, senderName, filename } = event;
+    showToast(`📎 ${senderName} sent you: ${filename}`, 'success');
+    loadFileHistory();
+    // Add file message to chat
+    if (!allMessages[senderMac]) allMessages[senderMac] = [];
+    allMessages[senderMac].push({ sender: senderName, content: `[File received] ${filename}`, time: now(), mine: false });
+    if (selectedMac === senderMac) renderMessages(senderMac);
+  }
+}
+
+// ── Toast ──────────────────────────────────────────────────────────
+function showToast(msg, type = 'info', peerMac = null) {
+  const icons = { success: '✅', error: '❌', info: '💬' };
+  const titles = { success: 'Success', error: 'Error', info: 'New Message' };
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.innerHTML = `
+    <div class="toast-icon">${icons[type]}</div>
+    <div class="toast-text">
+      <div class="toast-title">${titles[type]}</div>
+      <div class="toast-body">${escHtml(msg)}</div>
+    </div>`;
+  if (peerMac) el.style.cursor = 'pointer';
+  if (peerMac) el.onclick = () => selectPeer(peerMac);
+  document.getElementById('toasts').appendChild(el);
+  setTimeout(() => el.remove(), 4000);
+}
+
+// ── Input auto-resize ──────────────────────────────────────────────
+function setupInput() {
+  const input = document.getElementById('msg-input');
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+  input.addEventListener('input', () => autoResize(input));
+}
+
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 200) + 'px';
+}
+
+// ── Scroll ─────────────────────────────────────────────────────────
+function setupScrollDetection() {
+  const msgs = document.getElementById('messages');
+  msgs.addEventListener('scroll', () => {
+    const bottom = msgs.scrollHeight - msgs.clientHeight - msgs.scrollTop < 60;
+    atBottom = bottom;
+    document.getElementById('scroll-btn').classList.toggle('visible', !bottom);
+  });
+}
+
+function scrollToBottom(force = false) {
+  if (!atBottom && !force) return;
+  const msgs = document.getElementById('messages');
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+// ── Helpers ────────────────────────────────────────────────────────
+function escHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function formatSize(bytes) {
+  if (bytes >= 1048576) return (bytes / 1048576).toFixed(2) + ' MB';
+  if (bytes >= 1024)    return (bytes / 1024).toFixed(1) + ' KB';
+  return bytes + ' B';
+}
+
+function now() {
+  const d = new Date();
+  return d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0');
+}
+
+function hashCode(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = Math.imul(31, h) + str.charCodeAt(i) | 0;
+  return Math.abs(h);
+}
+
+function showFilesPanel() {
+  loadFileHistory();
+  showToast('File history refreshed', 'success');
+}
+
+// ── Start ──────────────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>
